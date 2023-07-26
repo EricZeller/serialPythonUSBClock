@@ -1,7 +1,4 @@
 #include "mbed.h"
-/*#include "BufferedSerial.h"
-#include "USBSerial.h"
-#include <cstdio>*/
 
 BufferedSerial pc(USBTX, USBRX);  // Verwende BufferedSerial statt Serial
 
@@ -23,16 +20,25 @@ unsigned int counter = 0;
 unsigned int seconds = 0;
 unsigned int hours = 0;
 unsigned int minutes = 0;
-bool displaySec = false;
+unsigned int day = 0;
+unsigned int month = 0;
+unsigned int year = 0;
+unsigned int unixstamp = 0;
+bool dot2 = true;
+bool dot4 = true; 
+int blinkrate = 100;
+int digit1 = 0;
+int digit2 = 0;
+int digit3 = 0;
+int digit4 = 0;
+enum statusTyp{hhmm, mmss, ddmm, yyyy};
+statusTyp status;
 
 void isrTimeout();
 void isrButton1();
 void isrButton2();
 void isrButton3();
 
-void wait(int ms) {
-    ThisThread::sleep_for(ms);
-}
 
 void shift(){
     ShiftClock = 0;
@@ -145,9 +151,9 @@ void display4(int seg1, int seg2, int seg3, int seg4, int timer){
         } else if (seg1 == 0) {
             display(1, sd_number_0); 
         }
-        ThisThread::sleep_for(1ms);
+        timeout.attach(&isrTimeout, 1ms);
 
-        if (counter < 3) {
+        if (dot2 == true) {
         
         if (seg2 == 1) {
             display(2, sd_number_1_dot); 
@@ -170,7 +176,7 @@ void display4(int seg1, int seg2, int seg3, int seg4, int timer){
         } else if (seg2 == 0) {
             display(2, sd_number_0_dot); 
         }
-        } else {
+        } else if (dot2 == false){
 
         if (seg2 == 1) {
             display(2, sd_number_1); 
@@ -195,7 +201,7 @@ void display4(int seg1, int seg2, int seg3, int seg4, int timer){
         }
         }
 
-        ThisThread::sleep_for(1ms);
+        timeout.attach(&isrTimeout, 1ms);
 
         if (seg3 == 1) {
             display(3, sd_number_1); 
@@ -218,7 +224,7 @@ void display4(int seg1, int seg2, int seg3, int seg4, int timer){
         } else if (seg3 == 0) {
             display(3, sd_number_0); 
         }
-        ThisThread::sleep_for(1ms);
+        timeout.attach(&isrTimeout, 1ms);
 
         if (seg4 == 1) {
             display(4, sd_number_1); 
@@ -241,48 +247,61 @@ void display4(int seg1, int seg2, int seg3, int seg4, int timer){
         } else if (seg4 == 0) {
             display(4, sd_number_0); 
         }
-        ThisThread::sleep_for(1ms);
-
+        timeout.attach(&isrTimeout, 1ms);
     }
-        
+}
 
+void isrTimeout(){
 
 }
 
-
 void isrButton1(){
-    if (displaySec == true) {
-        displaySec = false;
-    } else if(displaySec == false){
-        displaySec = true;
+    if (status == hhmm) {
+        status = mmss;
+    } else if(status == mmss){
+        status = ddmm;
+    } else if(status == ddmm){
+        status = yyyy;
+    } else if (status == yyyy) {
+        status = hhmm;
     }
+    timeout.attach(&isrTimeout, 50ms);
 }
 
 
 int main() {
-    
+    status = hhmm;
+    blinkrate = 100;
     pc.set_baud(9600);  // Setze die Baudrate auf 9600
     pc.set_format(8, SerialBase::None, 1);  // Setze Datenbits auf 8, Parität auf None und Stopbits auf 1
-
     button1.fall( &isrButton1 );
 
-    
-
     while (true) {
+        
+        if (seconds % 10 == 0) {
+            pc.write("?", 1);  // Anfrage nach aktueller Uhrzeit senden
 
-        pc.write("?", 1);  // Anfrage nach aktueller Uhrzeit senden
-
-        if (pc.readable()) {
-            char timeStr[9];
-            pc.read(timeStr, sizeof(timeStr));  // Den empfangenen String einlesen
-            timeStr[sizeof(timeStr) - 1] = '\0';  // Null-Terminierung hinzufügen
-            
-            //int hours, minutes, seconds;
-            sscanf(timeStr, "%d:%d:%d", &hours, &minutes, &seconds);  // Uhrzeit in separate Variablen aufteilen
-
-            // Die Uhrzeit in den Variablen verwenden
-            //printf("Stunden: %d, Minuten: %d, Sekunden: %d\n", hours, minutes, seconds);
+            if (pc.readable()) {
+                char timeStr[11];
+                pc.read(timeStr, sizeof(timeStr));  // Den empfangenen String einlesen
+                timeStr[sizeof(timeStr) - 1] = '\0';  // Null-Terminierung hinzufügen
+                const char *str = timeStr; 
+                unixstamp = atoi(str);  
+                set_time(unixstamp);
+            }
         }
+        time_t rawtime = time(NULL);
+        struct tm *timeinfo;
+        timeinfo = localtime(&rawtime);
+        // Extrahiere Tag, Monat und Jahr aus der Struktur
+        day = timeinfo->tm_mday;
+        month = timeinfo->tm_mon + 1; // Monate werden von 0 bis 11 gezählt, daher +1
+        year = timeinfo->tm_year + 1900; // Jahre seit 1900
+
+        // Extrahiere Stunden, Minuten und Sekunden aus der Struktur
+        hours = timeinfo->tm_hour + 2;
+        minutes = timeinfo->tm_min; 
+        seconds = timeinfo->tm_sec;
 
         //Sekundenanzeige
         if (seconds < 15) {
@@ -302,11 +321,34 @@ int main() {
 
 
         // Anzeigen der Stunden und Minuten
-        if (displaySec == true) {
-            display4(minutes / 10, minutes % 10, seconds / 10, seconds % 10, 100);
-        } else {    
-            display4(hours / 10, hours % 10, minutes / 10, minutes % 10, 100);
+
+        if (status == hhmm){
+            digit1 = hours / 10;
+            digit2 = hours % 10;
+            digit3 = minutes / 10;
+            digit4 = minutes % 10;
+            dot2 = true;
+        } else if(status == mmss){
+            digit1 = minutes / 10;
+            digit2 = minutes % 10;
+            digit3 = seconds / 10;
+            digit4 = seconds % 10; 
+        } else if(status == ddmm){
+            digit1 = day / 10;
+            digit2 = day % 10;
+            digit3 = month / 10;
+            digit4 = month % 10;
+        } else if (status == yyyy) {
+            digit1 = year / 1000;
+            digit2 = year / 100 % 10;
+            digit3 = year / 10 % 10;
+            digit4 = year % 10;
+            dot2 = false;
         }
+
+        
+
+        display4(digit1, digit2, digit3, digit4, blinkrate);
 
         if (counter < 10) {
             counter++;
