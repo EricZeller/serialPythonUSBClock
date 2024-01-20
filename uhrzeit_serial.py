@@ -1,7 +1,7 @@
 import serial
 import time
 
-ser = serial.Serial('COM9', 9600)  # COM9 durch den entsprechenden COM-Port ersetzen
+ser = serial.Serial('COM4', 9600)  # COM9 durch den entsprechenden COM-Port ersetzen
 last_time = ""
 
 try:
